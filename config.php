@@ -29,16 +29,16 @@
 
 	// Cấu hình thời gian làm việc
 	// Thời gian làm việc ngày thường (Thứ 2 - Thứ 6)
-	$gioVaoThuong = "23:55:00"; 
-	$gioRaThuong = "24:05:00"; 
+	$gioVaoThuong = "08:00:00"; 
+	$gioRaThuong = "17:00:00"; 
 
 	// Thời gian làm việc ngày thứ 7 (chỉ buổi sáng)
 	$gioVaoThu7 = "08:00:00";   
 	$gioRaThu7 = "12:00:00"; 
 
 	// Thời gian chấp nhận muộn
-	$mucTreChapNhan = 150; 
-	$mucVeSomChapNhan = 1;
+	$mucTreChapNhan = 15; 
+	$mucVeSomChapNhan = 15;
 
 	// Biến tạm tương thích ngược 
 	$gioVao = $gioVaoThuong;

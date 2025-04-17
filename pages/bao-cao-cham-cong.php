@@ -311,6 +311,40 @@ if(isset($_SESSION['username']) && isset($_SESSION['level']))
 							</div>
 						</div>
 						<div class="box-body">
+							<!-- CSS cho các nút điều chỉnh -->
+							<style>
+								.attendance-btn {
+									border: 2px solid;
+									padding: 3px 8px;
+									border-radius: 4px;
+									cursor: pointer;
+									transition: all 0.3s;
+									background: transparent;
+									margin-right: 3px;
+									font-size: 12px;
+								}
+								.attendance-btn.absent {
+									border-color: #dd4b39;
+									color: #dd4b39;
+								}
+								.attendance-btn.present {
+									border-color: #00a65a;
+									color: #00a65a;
+								}
+								.attendance-btn.absent.active {
+									background-color: #dd4b39;
+									color: white;
+								}
+								.attendance-btn.present.active {
+									background-color: #00a65a;
+									color: white;
+								}
+								.table-responsive th, .table-responsive td {
+									text-align: center;
+									vertical-align: middle !important;
+								}
+							</style>
+							
 							<div class="row">
 								<div class="col-md-4">
 									<div class="box box-solid">
@@ -391,6 +425,7 @@ if(isset($_SESSION['username']) && isset($_SESSION['level']))
 											<th>Giờ ra</th>
 											<th>Trạng thái ra</th>
 											<th>Hợp lệ</th>
+											<th width="15%">Điều chỉnh</th>
 										</tr>
 									</thead>
 									<tbody>
@@ -399,9 +434,10 @@ if(isset($_SESSION['username']) && isset($_SESSION['level']))
 										$today = date('Y-m-d');
 										
 										foreach ($chiTietChamCong as $item): 
-											$isWeekend = ($item['thu'] == 0 || $item['thu'] == 6); 
+											$isWeekend = ($item['thu'] == 0); // Chỉ coi Chủ nhật là ngày nghỉ
 											$isToday = ($item['ngay'] == $today);
-											$rowClass = $isWeekend ? 'active' : ($isToday ? 'warning' : '');
+											$isFuture = ($item['ngay'] > $today); // Ngày trong tương lai
+											$rowClass = $isWeekend ? 'active' : ($isToday ? 'warning' : ($isFuture ? 'info' : ''));
 										?>
 											<tr class="<?= $rowClass ?>">
 												<td><?= date('d/m/Y', strtotime($item['ngay'])) ?></td>
@@ -426,17 +462,33 @@ if(isset($_SESSION['username']) && isset($_SESSION['level']))
 														<span class="label label-default">Không có dữ liệu</span>
 													<?php endif; ?>
 												</td>
-												<td>
+												<td id="status-<?= $item['id'] ?? $item['ngay'] ?>">
 													<?php if ($item['hop_le']): ?>
 														<span class="label label-success">Hợp lệ</span>
 													<?php elseif ($isWeekend): ?>
-														<span class="label label-info">Ngày nghỉ</span>
+														<span class="label label-default">Ngày nghỉ</span>
 													<?php elseif ($isToday && $item['gio_vao'] === null): ?>
 														<span class="label label-primary">Hôm nay</span>
+													<?php elseif ($isFuture): ?>
+														<span class="label label-info">Ngày tương lai</span>
 													<?php elseif ($item['gio_vao'] === null): ?>
 														<span class="label label-danger">Vắng mặt</span>
 													<?php else: ?>
 														<span class="label label-danger">Không hợp lệ</span>
+													<?php endif; ?>
+												</td>
+												<td>
+													<?php if (!$isWeekend && !$isFuture): ?>
+														<div class="btn-group btn-group-sm">
+															<button type="button" class="attendance-btn absent <?= ($item['hop_le'] == 0 && isset($item['id'])) ? 'active' : '' ?>" data-action="0" data-date="<?= $item['ngay'] ?>" data-id="<?= $item['id'] ?? 0 ?>" data-nv="<?= $nhanVienId ?>">
+																<i class="fa fa-times"></i> Vắng
+															</button>
+															<button type="button" class="attendance-btn present <?= $item['hop_le'] == 1 ? 'active' : '' ?>" data-action="1" data-date="<?= $item['ngay'] ?>" data-id="<?= $item['id'] ?? 0 ?>" data-nv="<?= $nhanVienId ?>">
+																<i class="fa fa-check"></i> Có mặt
+															</button>
+														</div>
+													<?php else: ?>
+														<span class="text-muted">---</span>
 													<?php endif; ?>
 												</td>
 											</tr>
@@ -455,6 +507,26 @@ if(isset($_SESSION['username']) && isset($_SESSION['level']))
 				</div>
 			</div>
 		<?php endif; ?>
+		
+		<!-- Modal cập nhật trạng thái -->
+		<div class="modal fade" id="updateModal" tabindex="-1" role="dialog">
+			<div class="modal-dialog" role="document">
+				<div class="modal-content">
+					<div class="modal-header">
+						<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+						<h4 class="modal-title">Cập nhật trạng thái chấm công</h4>
+					</div>
+					<div class="modal-body">
+						<p>Bạn có chắc chắn muốn cập nhật trạng thái chấm công cho nhân viên này?</p>
+						<p class="text-info" id="modal-message"></p>
+					</div>
+					<div class="modal-footer">
+						<button type="button" class="btn btn-default" data-dismiss="modal">Hủy</button>
+						<button type="button" class="btn btn-primary" id="confirmUpdate">Xác nhận</button>
+					</div>
+				</div>
+			</div>
+		</div>
 	</section>
 	<!-- /.content -->
 </div>
@@ -469,4 +541,91 @@ else
 	// Redirect to login page
 	header('Location: ' . ROOT_PATH . '/pages/dang-nhap.php');
 }
-?> 
+?>
+
+<script>
+	$(document).ready(function() {
+		// Xử lý sự kiện khi nhấn nút điều chỉnh
+		$('.attendance-btn').click(function() {
+			const action = $(this).data('action');
+			const date = $(this).data('date');
+			const id = $(this).data('id');
+			const nhanVienId = $(this).data('nv');
+			const actionText = action == 1 ? 'có mặt' : 'vắng mặt';
+			
+			// Cập nhật UI - thêm class active cho nút được chọn
+			const btnGroup = $(this).closest('.btn-group');
+			btnGroup.find('.attendance-btn').removeClass('active');
+			$(this).addClass('active');
+			
+			// Hiển thị modal xác nhận
+			$('#modal-message').text('Ngày: ' + date + ' - Trạng thái: ' + actionText);
+			
+			// Lưu dữ liệu vào nút xác nhận
+			$('#confirmUpdate').data('action', action);
+			$('#confirmUpdate').data('date', date);
+			$('#confirmUpdate').data('id', id);
+			$('#confirmUpdate').data('nv', nhanVienId);
+			$('#confirmUpdate').data('btn', $(this));
+			
+			// Hiển thị modal xác nhận
+			$('#updateModal').modal('show');
+		});
+		
+		// Xử lý khi nhấn nút xác nhận trong modal
+		$('#confirmUpdate').on('click', function() {
+			const action = $(this).data('action');
+			const date = $(this).data('date');
+			const id = $(this).data('id');
+			const nhanVienId = $(this).data('nv');
+			const clickedBtn = $(this).data('btn');
+			
+			// Gửi Ajax request để cập nhật trạng thái
+			$.ajax({
+				url: 'ajax.php',
+				type: 'POST',
+				data: {
+					action: action,
+					date: date,
+					id: id,
+					nhanVienId: nhanVienId,
+					thang: <?= $thang ?>,
+					nam: <?= $nam ?>
+				},
+				success: function(response) {
+					try {
+						const res = JSON.parse(response);
+						if (res.success) {
+							// Cập nhật giao diện - trạng thái
+							const elementId = id > 0 ? 'status-' + id : 'status-' + date;
+							if (action == 1) {
+								$('#' + elementId).html('<span class="label label-success">Hợp lệ</span>');
+							} else {
+								$('#' + elementId).html('<span class="label label-danger">Vắng mặt</span>');
+							}
+							
+							// Giữ trạng thái active cho nút đã chọn
+							clickedBtn.closest('.btn-group').find('.attendance-btn').removeClass('active');
+							clickedBtn.addClass('active');
+							
+							// Hiển thị thông báo thành công
+							alert(res.message);
+						} else {
+							alert('Lỗi: ' + res.message);
+						}
+					} catch (e) {
+						alert('Lỗi xử lý phản hồi từ máy chủ');
+						console.error(e);
+					}
+					
+					// Đóng modal
+					$('#updateModal').modal('hide');
+				},
+				error: function() {
+					alert('Đã xảy ra lỗi khi cập nhật trạng thái');
+					$('#updateModal').modal('hide');
+				}
+			});
+		});
+	});
+</script> 
